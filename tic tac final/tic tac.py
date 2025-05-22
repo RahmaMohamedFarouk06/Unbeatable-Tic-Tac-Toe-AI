@@ -1,0 +1,254 @@
+import pygame
+import sys
+import random
+
+# === إعدادات الواجهة ===
+WIDTH, HEIGHT = 700, 650
+LINE_WIDTH = 15
+BOARD_ROWS = 3
+BOARD_COLS = 3
+SQUARE_SIZE = WIDTH // 3
+CIRCLE_RADIUS = SQUARE_SIZE // 3
+CIRCLE_WIDTH = 15
+CROSS_WIDTH = 25
+SPACE = SQUARE_SIZE // 4
+
+# 🎨 ألوان جلاكسي
+BG_COLOR = (25, 25, 45)
+LINE_COLOR = (120, 60, 200)
+CIRCLE_COLOR = (0, 255, 255)
+CROSS_COLOR = (255, 105, 180)
+WIN_LINE_COLOR = (255, 255, 255)
+TEXT_COLOR = (255, 255, 255)
+
+# === تمهيد اللعبة ===
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption('Tic Tac Toe - Galaxy Mode')
+font_large = pygame.font.SysFont('arialblack', 60)
+font_score = pygame.font.SysFont('arial', 30)
+
+board = [['' for _ in range(3)] for _ in range(3)]
+winning_line = None
+draw_win_now = False
+
+# Score
+score_player = 0
+score_ai = 0
+
+# AI delay
+ai_thinking = False
+ai_think_start_time = 0
+AI_THINK_DELAY = 550 # ms
+
+preferred_patterns = [
+    [(0, 0), (1, 0), (2, 0)],
+    [(0, 1), (1, 1), (2, 1)],
+    [(0, 2), (1, 2), (2, 2)],
+    [(0, 0), (0, 1), (0, 2)],
+    [(1, 0), (1, 1), (1, 2)],
+    [(2, 0), (2, 1), (2, 2)],
+    [(0, 0), (1, 1), (2, 2)],
+    [(0, 2), (1, 1), (2, 0)]
+]
+
+
+def draw_lines():
+    for i in range(1, 3):
+        pygame.draw.line(screen, LINE_COLOR, (0, i * SQUARE_SIZE), (WIDTH, i * SQUARE_SIZE), LINE_WIDTH)
+        pygame.draw.line(screen, LINE_COLOR, (i * SQUARE_SIZE, 0), (i * SQUARE_SIZE, SQUARE_SIZE * 3), LINE_WIDTH)
+
+
+def draw_figures():
+    for row in range(BOARD_ROWS):
+        for col in range(BOARD_COLS):
+            if board[row][col] == 'O':
+                pygame.draw.circle(screen, CIRCLE_COLOR,
+                                   (col * SQUARE_SIZE + SQUARE_SIZE // 2, row * SQUARE_SIZE + SQUARE_SIZE // 2),
+                                   CIRCLE_RADIUS, CIRCLE_WIDTH)
+            elif board[row][col] == 'X':
+                start_desc = (col * SQUARE_SIZE + SPACE, row * SQUARE_SIZE + SPACE)
+                end_desc = (col * SQUARE_SIZE + SQUARE_SIZE - SPACE, row * SQUARE_SIZE + SQUARE_SIZE - SPACE)
+                pygame.draw.line(screen, CROSS_COLOR, start_desc, end_desc, CROSS_WIDTH)
+                start_asc = (col * SQUARE_SIZE + SPACE, row * SQUARE_SIZE + SQUARE_SIZE - SPACE)
+                end_asc = (col * SQUARE_SIZE + SQUARE_SIZE - SPACE, row * SQUARE_SIZE + SPACE)
+                pygame.draw.line(screen, CROSS_COLOR, start_asc, end_asc, CROSS_WIDTH)
+
+    if draw_win_now and winning_line:
+        draw_win_line(winning_line)
+
+
+def draw_win_line(pattern):
+    (i1, j1), (i2, j2) = pattern[0], pattern[2]
+    x1 = j1 * SQUARE_SIZE + SQUARE_SIZE // 2
+    y1 = i1 * SQUARE_SIZE + SQUARE_SIZE // 2
+    x2 = j2 * SQUARE_SIZE + SQUARE_SIZE // 2
+    y2 = i2 * SQUARE_SIZE + SQUARE_SIZE // 2
+    pygame.draw.line(screen, WIN_LINE_COLOR, (x1, y1), (x2, y2), 10)
+
+
+def show_result(text):
+    label = font_large.render(text, True, TEXT_COLOR)
+    rect = label.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    screen.blit(label, rect)
+
+
+def show_score():
+    score_text = font_score.render(f"You: {score_player}   |   AI: {score_ai}", True, TEXT_COLOR)
+    screen.blit(score_text, (20, HEIGHT - 40))
+
+
+def is_winner(b, player):
+    global winning_line
+    for pattern in preferred_patterns:
+        if all(b[i][j] == player for i, j in pattern):
+            winning_line = pattern
+            return True
+    return False
+
+
+def get_empty_cells(b):
+    return [(i, j) for i in range(3) for j in range(3) if b[i][j] == '']
+
+
+def evaluate(b, ai='X', human='O'):
+    if is_winner(b, ai):
+        return 10
+    elif is_winner(b, human):
+        return -10
+    return 0
+
+
+def minimax(b, depth, alpha, beta, is_max, ai='X', human='O'):
+    score = evaluate(b, ai, human)
+    if abs(score) == 10 or not get_empty_cells(b) or depth == 0:
+        return score
+
+    if is_max:
+        max_eval = -float('inf')
+        for i, j in get_empty_cells(b):
+            b[i][j] = ai
+            eval = minimax(b, depth - 1, alpha, beta, False, ai, human)
+            b[i][j] = ''
+            max_eval = max(max_eval, eval)
+            alpha = max(alpha, eval)
+            if beta <= alpha:
+                break
+        return max_eval
+    else:
+        min_eval = float('inf')
+        for i, j in get_empty_cells(b):
+            b[i][j] = human
+            eval = minimax(b, depth - 1, alpha, beta, True, ai, human)
+            b[i][j] = ''
+            min_eval = min(min_eval, eval)
+            beta = min(beta, eval)
+            if beta <= alpha:
+                break
+        return min_eval
+
+
+def best_move(b, ai='X', human='O'):
+    best_score = -float('inf')
+    move = None
+    for i, j in get_empty_cells(b):
+        b[i][j] = ai
+        score = minimax(b, 4, -float('inf'), float('inf'), False, ai, human)
+        b[i][j] = ''
+        if score > best_score:
+            best_score = score
+            move = (i, j)
+    return move
+
+
+def random_move(b):
+    return random.choice(get_empty_cells(b))
+
+
+def restart():
+    global board, game_over, player_turn, winning_line, draw_win_now, ai_thinking
+    board = [['' for _ in range(3)] for _ in range(3)]
+    screen.fill(BG_COLOR)
+    draw_lines()
+    draw_win_now = False
+    winning_line = None
+    game_over = False
+    player_turn = False
+    ai_thinking = False
+
+
+# === بداية اللعبة ===
+draw_lines()
+game_over = False
+player_turn = False
+
+# === الحلقة الرئيسية ===
+while True:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+
+        if game_over:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                restart()
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if button_rect.collidepoint(event.pos):
+                    restart()
+
+        if event.type == pygame.MOUSEBUTTONDOWN and player_turn and not game_over:
+            x = event.pos[0] // SQUARE_SIZE
+            y = event.pos[1] // SQUARE_SIZE
+            if board[y][x] == '':
+                board[y][x] = 'O'
+                if is_winner(board, 'O'):
+                    score_player += 1
+                    draw_win_now = True
+                    game_over = True
+                elif not get_empty_cells(board):
+                    game_over = True
+                else:
+                    player_turn = False
+                    ai_thinking = False
+
+    if not player_turn and not game_over:
+        if not ai_thinking:
+            ai_thinking = True
+            ai_think_start_time = pygame.time.get_ticks()
+        elif pygame.time.get_ticks() - ai_think_start_time >= AI_THINK_DELAY:
+            move = random_move(board) if all(board[i][j] == '' for i in range(3) for j in range(3)) else best_move(board)
+            if move:
+                board[move[0]][move[1]] = 'X'
+            if is_winner(board, 'X'):
+                score_ai += 1
+                draw_win_now = True
+                game_over = True
+            elif not get_empty_cells(board):
+                game_over = True
+            else:
+                player_turn = True
+            ai_thinking = False
+
+    screen.fill(BG_COLOR)
+    draw_lines()
+    draw_figures()
+    show_score()
+
+    if game_over:
+        if is_winner(board, 'O'):
+            show_result("You Win!")
+        elif is_winner(board, 'X'):
+            show_result("AI Wins!")
+        else:
+            show_result("Draw!")
+
+        button_rect = pygame.Rect(WIDTH // 2 - 100, HEIGHT - 90, 200, 50)
+        pygame.draw.rect(screen, (60, 60, 120), button_rect, border_radius=10)
+        pygame.draw.rect(screen, (200, 200, 255), button_rect, 3, border_radius=10)
+        button_text = font_score.render("Play Again", True, TEXT_COLOR)
+        text_rect = button_text.get_rect(center=button_rect.center)
+        screen.blit(button_text, text_rect)
+
+    pygame.display.update()
+
+# elcode da ba3d ma 5let el ai yfkr shewya abl m yl3b
